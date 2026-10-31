@@ -152,7 +152,7 @@ python3 moodle.py ai-upload off   # 關閉
 - 每天自動同步只會在電腦開機且沒有睡眠時執行。
 - `INDEX.md` 和 `DEADLINES.md` 每次同步都會重寫，筆記請記在別的檔案。
 
-## 停止使用
+## 如何解除安裝
 
 1. 刪除 `~/.moodle-student-kit` 資料夾。
 2. 請 Claude Code 移除每天自動同步。

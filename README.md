@@ -152,7 +152,7 @@ Open Claude Code inside your `~/Moodle` folder. Each sync leaves a set of rules 
 - The daily sync only runs while your computer is on and awake.
 - `INDEX.md` and `DEADLINES.md` are rewritten on every sync, so keep your notes in other files.
 
-## Stop using it
+## How to uninstall
 
 1. Delete the `~/.moodle-student-kit` folder.
 2. Ask Claude Code to remove the daily sync.
