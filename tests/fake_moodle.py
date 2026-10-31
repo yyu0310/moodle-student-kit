@@ -7,6 +7,7 @@ Run it on its own to try the tool without a real account:
 import base64
 import hashlib
 import json
+import re
 import sys
 import time
 import urllib.parse
@@ -34,6 +35,14 @@ class FakeMoodle(ThreadingHTTPServer):
         self.blocked = set()  # functions the school has switched off
         self.key_expired = False  # an expired key answers accessexception at first
         self.event_name = "Homework 3 is due"
+        self.uploads = []  # (name, content) of every file received
+        self.submission = {"status": "new", "files": []}
+        self.canedit = True
+        self.drafts_required = True
+        self.save_warning = None
+        self.statement_required = False
+        self.online_text = ""
+        self.upload_answer = None  # lets a test replace upload.php's reply
         self.files = {
             "/stats/week1-slides.pdf": b"%PDF-1.7 fake statistics slides, week 1",
             "/stats/week2-slides.pdf": b"%PDF-1.7 fake statistics slides, week 2",
@@ -143,7 +152,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
-        form = dict(urllib.parse.parse_qsl(self.rfile.read(length).decode()))
+        raw = self.rfile.read(length)
+        if self.path == "/webservice/upload.php":
+            return self.upload(raw)
+        form = dict(urllib.parse.parse_qsl(raw.decode()))
         fn = form.get("wsfunction")
         self.server.calls.append(fn)
         denied = {"exception": "webservice_access_exception", "errorcode": "accessexception", "message": "Access control exception"}
@@ -154,6 +166,16 @@ class Handler(BaseHTTPRequestHandler):
         else:
             out = self.answer(fn, form)
         self.reply(200, json.dumps(out).encode(), {"Content-Type": "application/json"})
+
+    def upload(self, raw):
+        """Same contract as Moodle's webservice/upload.php."""
+        if self.server.upload_answer is not None:
+            return self.reply(200, self.server.upload_answer)
+        if TOKEN.encode() not in raw:
+            return self.reply(200, json.dumps({"error": "Invalid token", "errorcode": "invalidtoken"}).encode())
+        found = re.search(rb'filename="([^"]*)"\r\nContent-Type: [^\r]*\r\n\r\n(.*?)\r\n--', raw, re.DOTALL)
+        self.server.uploads.append((found.group(1).decode(), found.group(2)))
+        self.reply(200, json.dumps([{"filename": found.group(1).decode(), "itemid": 555, "filearea": "draft"}]).encode())
 
     def answer(self, fn, form):
         srv = self.server
@@ -169,6 +191,8 @@ class Handler(BaseHTTPRequestHandler):
                 "core_calendar_get_action_events_by_timesort",
                 "gradereport_overview_get_course_grades",
                 "mod_forum_get_forum_discussions",
+                "mod_assign_get_assignments",
+                "mod_assign_get_submission_status",
             ]
             return {
                 "sitename": "Example University",
@@ -195,6 +219,33 @@ class Handler(BaseHTTPRequestHandler):
         if fn == "mod_forum_get_forum_discussions":
             rows = srv.forums.get(int(form["forumid"]), [])
             return {"discussions": [{"attachments": [srv.file_entry(r["filename"], r["path"]) for r in rows]}]}
+        if fn == "mod_assign_get_assignments":
+            return {"courses": [{"id": 101, "shortname": "STAT101", "assignments": [
+                {"id": 9, "cmid": 90, "name": "Homework 3", "duedate": int(time.time()) + 86400,
+                 "requiresubmissionstatement": int(srv.statement_required)},
+            ]}]}
+        if fn == "mod_assign_get_submission_status":
+            files = [{"filename": n} for n in srv.submission["files"]]
+            attempt = {
+                "submission": {"status": srv.submission["status"], "plugins": [
+                    {"type": "file", "fileareas": [{"files": files}]},
+                    {"type": "onlinetext", "editorfields": [{"name": "onlinetext", "text": srv.online_text}]},
+                ]},
+                "canedit": srv.canedit,
+                "cansubmit": srv.drafts_required and bool(files) and srv.submission["status"] != "submitted",
+            }
+            return {"lastattempt": attempt}
+        if fn == "mod_assign_save_submission":
+            if srv.save_warning:
+                return [{"item": "Homework 3", "message": srv.save_warning}]
+            assert form["plugindata[files_filemanager]"] == "555"
+            srv.submission = {"status": "draft", "files": [srv.uploads[-1][0]]}
+            return []
+        if fn == "mod_assign_submit_for_grading":
+            if srv.statement_required and form["acceptsubmissionstatement"] != "1":
+                return [{"item": "Homework 3", "message": "couldnotsubmitforgrading"}]
+            srv.submission["status"] = "submitted"
+            return []
         if fn == "gradereport_overview_get_course_grades":
             return {"grades": [{"courseid": 101, "grade": "88.00"}, {"courseid": 102, "grade": "-"}]}
         return {"exception": "moodle_exception", "errorcode": "invalidrecord", "message": f"Unknown function {fn}"}

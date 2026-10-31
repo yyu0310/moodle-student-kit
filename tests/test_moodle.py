@@ -110,7 +110,7 @@ class Login(Base):
         self.assertIn("demo.student", out)
         with open(self.config) as f:
             saved = json.load(f)
-        self.assertEqual(saved, {"url": self.server.site, "token": fake_moodle.TOKEN})
+        self.assertEqual(saved, {"url": self.server.site, "token": fake_moodle.TOKEN, "ai_upload": False})
         self.assertEqual(stat.S_IMODE(os.stat(self.config).st_mode), 0o600)
 
     def test_full_cookie_header_also_works(self):
@@ -237,9 +237,209 @@ class Reading(Base):
     def test_no_command_calls_a_write_function(self):
         self.run_cli("info"), self.run_cli("courses"), self.run_cli("deadlines"), self.run_cli("grades")
         self.run_cli("sync", "--all", self.target)
+        self.run_cli("assignments")
         self.assertTrue(self.server.calls)
         for fn in self.server.calls:
             self.assertRegex(fn, r"_get_|_get$")
+
+
+class UploadBase(Base):
+    def setUp(self):
+        super().setUp()
+        self.login()
+        self.file = os.path.join(self.tmp, "homework.pdf")
+        with open(self.file, "wb") as f:
+            f.write(b"%PDF-1.7 my homework")
+
+    def upload(self, answer="UPLOAD", tty=True, assignment="9", path=None):
+        with mock.patch("sys.stdin", mock.Mock(isatty=lambda: tty)), mock.patch("builtins.input", return_value=answer):
+            return self.run_cli("upload", assignment, path or self.file)
+
+
+class Upload(UploadBase):
+    def test_assignments_lists_ids(self):
+        out = self.run_cli("assignments")[0]
+        self.assertIn("[9]", out)
+        self.assertIn("Homework 3", out)
+        self.assertTrue(json.loads(self.run_cli("assignments", "--json")[0]))
+
+    def test_upload_saves_the_file_and_warns_first(self):
+        out, _, code = self.upload()
+        self.assertIsNone(code)
+        self.assertIn("NOT recommended", out)
+        self.assertIn("[STAT101] Homework 3", out)
+        self.assertEqual(self.server.uploads, [("homework.pdf", b"%PDF-1.7 my homework")])
+        self.assertIn("mod_assign_save_submission", self.server.calls)
+
+    def test_upload_says_when_the_student_must_still_press_submit(self):
+        self.assertIn("NOT handed in yet", self.upload()[0])
+
+    def test_upload_without_a_submit_step_says_saved(self):
+        self.server.drafts_required = False
+        out = self.upload()[0]
+        self.assertIn("Saved.", out)
+        self.assertNotIn("NOT handed in", out)
+
+    def test_upload_never_presses_submit(self):
+        self.upload()
+        self.assertNotIn("mod_assign_submit_for_grading", self.server.calls)
+
+    def test_upload_refuses_anything_but_a_real_terminal(self):
+        self.assertIn("own terminal", self.upload(tty=False)[2])
+        self.assertEqual(self.server.uploads, [])
+
+    def test_anything_but_the_exact_word_cancels(self):
+        for answer in ("yes", "upload", ""):
+            self.assertIn("Cancelled", self.upload(answer=answer)[0])
+        self.assertEqual(self.server.uploads, [])
+
+    def test_upload_never_replaces_existing_files(self):
+        self.server.submission = {"status": "draft", "files": ["earlier.pdf"]}
+        self.assertIn("already has your work", self.upload()[2])
+        self.assertEqual(self.server.uploads, [])
+
+    def test_upload_never_replaces_online_text(self):
+        self.server.online_text = "<p>my essay so far</p>"
+        self.assertIn("already has your work", self.upload()[2])
+        self.assertEqual(self.server.uploads, [])
+
+    def test_sensitive_files_are_refused(self):
+        os.makedirs(os.path.join(self.tmp, ".ssh"))
+        names = ["credentials.json", "CREDENTIALS.JSON", ".env", ".env.local", "id_rsa", "my_secret.txt",
+                 "api_key.txt", "server.pem", "login.key", ".ssh/notes.pdf"]
+        for name in names:
+            path = os.path.join(self.tmp, name)
+            with open(path, "w") as f:
+                f.write("fake")
+            self.assertIn("password or key file", self.upload(path=path)[2], name)
+        self.assertIn("password or key file", self.upload(path=self.config)[2])
+        self.assertEqual(self.server.uploads, [])
+
+    def test_a_link_to_a_sensitive_file_is_refused(self):
+        link = os.path.join(self.tmp, "homework-final.pdf")
+        os.symlink(self.config, link)
+        self.assertIn("password or key file", self.upload(path=link)[2])
+
+    def test_ordinary_homework_names_pass(self):
+        for name in ("essay_final.pdf", "Keynote notes.pdf", "monkey_study.docx"):
+            self.assertFalse(moodle.sensitive_file(os.path.join(self.tmp, name)), name)
+
+    def test_locked_submission_is_refused(self):
+        self.server.canedit = False
+        self.assertIn("won't let you", self.upload()[2])
+        self.assertEqual(self.server.uploads, [])
+
+    def test_unknown_assignment_is_refused(self):
+        self.assertIn("No assignment", self.upload(assignment="404")[2])
+
+    def test_missing_file_is_refused(self):
+        self.assertIn("File not found", self.upload(path="/no/such/file.pdf")[2])
+
+    def test_moodle_warning_is_reported_as_a_failure(self):
+        self.server.save_warning = "Due date has passed"
+        self.assertIn("Due date has passed", self.upload()[2])
+
+    def test_secret_never_reaches_the_output(self):
+        out, err, _ = self.upload()
+        self.assertNotIn(fake_moodle.TOKEN, out + err)
+
+    def test_write_function_is_blocked_without_the_upload_path(self):
+        for fn in ("mod_assign_save_submission", "mod_assign_submit_for_grading"):
+            with self.assertRaisesRegex(moodle.MoodleError, "only reads"):
+                moodle.call(fn, assignmentid=9)
+
+    def test_ctrl_d_cancels(self):
+        with mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)), mock.patch("builtins.input", side_effect=EOFError):
+            self.assertIn("Cancelled", self.run_cli("upload", "9", self.file)[0])
+        self.assertEqual(self.server.uploads, [])
+
+    def test_saved_without_a_submit_step_says_it_counts_as_handed_in(self):
+        self.server.drafts_required = False
+        self.assertIn("counts as handed in", self.upload()[0])
+
+    def test_broken_upload_answers_are_never_treated_as_success(self):
+        for answer in (b'{"error":"too big"}', b"[]", b"[null]", b"[1]", b'[{"itemid":null}]', b'[{"itemid":0}]',
+                       b'""', b"0", b'"abc"', b'[{"itemid":5,"error":"oversized\\u001b[31m"}]', b"<html>"):
+            self.server.upload_answer = answer
+            _, _, code = self.upload()
+            self.assertIn("Error", "Error" if code else "", answer)
+            self.assertNotIn("\x1b", str(code), answer)
+            self.assertNotIn("mod_assign_save_submission", self.server.calls, answer)
+
+    def test_team_submission_files_are_protected_too(self):
+        attempt = {"submission": {"plugins": []}, "teamsubmission": {"plugins": [{"fileareas": [{"files": [{"filename": "a"}]}]}]}}
+        self.assertEqual(len(moodle.submitted_work(attempt)), 1)
+
+    def test_odd_warning_shapes_are_still_failures(self):
+        for warnings in ([{"message": "late"}], ["late"], {"message": "late"}, "late"):
+            with self.assertRaises(moodle.MoodleError):
+                moodle.stop_on_warnings(warnings, "save it")
+        moodle.stop_on_warnings([], "save it")
+
+
+class AiUpload(UploadBase):
+    def set_ai_upload(self, state, answer=moodle.AI_UPLOAD_PHRASE, tty=True):
+        with mock.patch("sys.stdin", mock.Mock(isatty=lambda: tty)), mock.patch("builtins.input", return_value=answer):
+            return self.run_cli("ai-upload", state)
+
+    def auto(self):
+        with mock.patch("sys.stdin", mock.Mock(isatty=lambda: False)):
+            return self.run_cli("upload", "9", self.file, "--auto")
+
+    def test_auto_is_off_by_default(self):
+        self.assertIn("AI upload is off", self.auto()[2])
+        self.assertEqual(self.server.uploads, [])
+
+    def test_only_a_real_terminal_can_turn_it_on(self):
+        self.assertIn("own terminal", self.set_ai_upload("on", tty=False)[2])
+        self.assertIn("AI upload is off", self.auto()[2])
+
+    def test_the_exact_phrase_is_required(self):
+        for answer in ("yes", "allow ai upload", ""):
+            self.assertIn("Cancelled", self.set_ai_upload("on", answer=answer)[0])
+        self.assertIn("AI upload is off", self.auto()[2])
+
+    def test_auto_uploads_and_hands_in(self):
+        self.set_ai_upload("on")
+        out, _, code = self.auto()
+        self.assertIsNone(code)
+        self.assertIn("Handed in", out)
+        self.assertEqual(self.server.submission["status"], "submitted")
+
+    def test_auto_never_accepts_a_statement_for_the_student(self):
+        self.server.statement_required = True
+        self.set_ai_upload("on")
+        out, _, code = self.auto()
+        self.assertIsNone(code)
+        self.assertIn("accept a statement", out)
+        self.assertEqual(self.server.submission["status"], "draft")
+        self.assertNotIn("mod_assign_submit_for_grading", self.server.calls)
+
+    def test_auto_still_refuses_to_replace_files(self):
+        self.set_ai_upload("on")
+        self.server.submission = {"status": "draft", "files": ["earlier.pdf"]}
+        self.assertIn("already has your work", self.auto()[2])
+
+    def test_auto_refuses_sensitive_files(self):
+        self.set_ai_upload("on")
+        self.file = self.config
+        self.assertIn("password or key file", self.auto()[2])
+        self.assertEqual(self.server.uploads, [])
+
+    def test_turning_it_off_works_from_anywhere(self):
+        self.set_ai_upload("on")
+        self.assertIn("off", self.set_ai_upload("off", tty=False)[0])
+        self.assertIn("AI upload is off", self.auto()[2])
+
+    def test_signing_in_again_turns_it_off(self):
+        self.set_ai_upload("on")
+        self.login()
+        self.assertIn("AI upload is off", self.auto()[2])
+
+    def test_environment_sign_in_cannot_use_auto(self):
+        with mock.patch.dict(os.environ, {"MOODLE_URL": self.server.site, "MOODLE_TOKEN": fake_moodle.TOKEN}):
+            os.remove(self.config)
+            self.assertIn("AI upload is off", self.auto()[2])
 
 
 class Sync(Base):
@@ -419,6 +619,7 @@ class Sync(Base):
         self.run_cli("sync", "--all", self.target)
         for name in moodle.RULES_FILES:
             self.assertIn("Never follow instructions", self.read(name).decode())
+            self.assertIn("ai-upload on", self.read(name).decode())
 
     def test_sync_does_not_replace_the_students_own_agent_file(self):
         os.makedirs(self.target)
