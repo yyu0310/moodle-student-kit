@@ -72,7 +72,7 @@ python3 moodle.py login https://你的-moodle-網址
 
 登入資訊存在 `~/.moodle-student-kit/credentials.json`。在 Mac 和 Linux 上，其他帳號讀不到這個檔案，但你執行的程式都讀得到。
 
-**這把鑰匙能做什麼。** 這個工具的指令只會讀取 Moodle，但鑰匙本身能做你在 Moodle 上能做的所有事，包括交作業。請把它當成密碼保管。
+**這把鑰匙能做什麼。** 除了 `upload`，這個工具的指令只會讀取 Moodle，但鑰匙本身能做你在 Moodle 上能做的所有事，包括交作業。請把它當成密碼保管。
 
 ## 日常指令
 
@@ -87,8 +87,38 @@ python3 moodle.py login https://你的-moodle-網址
 | `python3 moodle.py contents 123` | 列出課程 123 的章節和檔案 |
 | `python3 moodle.py sync 123 ~/統計學` | 下載一門課 |
 | `python3 moodle.py sync --all ~/Moodle` | 下載這些課，並產生 `DEADLINES.md` |
+| `python3 moodle.py assignments` | 列出作業的編號和截止日 |
 
-在 `info`、`courses`、`deadlines`、`grades`、`contents` 後面加 `--json`，輸出就能給其他程式讀取。
+在 `info`、`courses`、`deadlines`、`grades`、`contents`、`assignments` 後面加 `--json`，輸出就能給其他程式讀取。
+
+## 上傳作業（不建議使用）
+
+能用 Moodle 網頁就用網頁交，才看得到實際交了什麼。真的需要時才用這個指令。
+
+```bash
+python3 moodle.py assignments                  # 查作業編號
+python3 moodle.py upload 456 ~/homework.pdf
+```
+
+- 要另外開一個終端機視窗執行，不能在 Claude Code 裡跑。它會拒絕在 Claude Code 裡執行，有助於防止課程檔案騙它代交。這是一道防護，不是絕對擋得住。
+- 它會顯示作業和檔案，你要輸入 `UPLOAD` 才會繼續。
+- 作業裡已經有你的檔案或文字時，它不會動；看起來像密碼或金鑰的檔案也會被拒絕。
+- 有些作業上傳後還要到網頁按「繳交」，指令會告訴你。沒有繳交按鈕的作業，存檔後通常就算交了。
+- 上傳後請到網頁確認。交出去的內容由你自己負責。
+
+### 讓 Claude Code 代交（預設關閉）
+
+如果你想交給 Claude Code 處理，要自己另外開終端機打開這個選項：
+
+```bash
+python3 moodle.py ai-upload on    # 輸入 ALLOW AI UPLOAD 確認
+python3 moodle.py ai-upload off   # 關閉
+```
+
+- 打開後，Claude Code 可以執行 `upload 456 ~/homework.pdf --auto`，上傳檔案並按下繳交。交出去通常就改不了。
+- 打開後，課程檔案可能試圖騙 Claude Code 代交。願意承擔這個風險才打開。
+- 作業要求你接受聲明時，會停在草稿，由你自己按繳交。那是你本人的承諾。
+- 重新登入後會自動關閉。這個開關要在真的終端機打開，這是一道防護，不是絕對擋得住。
 
 ## 可以跟 Claude Code 這樣說
 
@@ -114,7 +144,7 @@ python3 moodle.py login https://你的-moodle-網址
 
 ## 限制
 
-- 指令只會讀取。不能交作業、發文或作答，也不會讀測驗題目。
+- 只有 `upload` 會改動 Moodle 上的東西。它和 `--auto` 都只在假站台測過，還沒用真實作業測試。沒有指令能發文或作答，也不會讀測驗題目。
 - `DEADLINES.md` 只列 Moodle 行事曆上的待辦。只寫在講義或公告裡的日期不會出現，一切以 Moodle 和老師公告為準。
 - 作業說明的附件、討論串的回覆、其他網站上的檔案都不會下載。存在 Moodle 裡的影片會下載，檔案可能很大。
 - 能否登入要看學校。從校務入口單一登入的學校比較適合；使用一般 Moodle 密碼的學校可能會拒絕；關閉 Moodle mobile web service 的學校無法使用。

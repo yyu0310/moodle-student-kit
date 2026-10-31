@@ -72,7 +72,7 @@ python3 moodle.py login https://你的-moodle-网址
 
 登录信息存在 `~/.moodle-student-kit/credentials.json`。在 Mac 和 Linux 上，其他账号读不到这个文件，但你运行的程序都读得到。
 
-**这把钥匙能做什么。** 这个工具的命令只会读取 Moodle，但钥匙本身能做你在 Moodle 上能做的所有事，包括交作业。请把它当成密码保管。
+**这把钥匙能做什么。** 除了 `upload`，这个工具的命令只会读取 Moodle，但钥匙本身能做你在 Moodle 上能做的所有事，包括交作业。请把它当成密码保管。
 
 ## 日常命令
 
@@ -87,8 +87,38 @@ python3 moodle.py login https://你的-moodle-网址
 | `python3 moodle.py contents 123` | 列出课程 123 的章节和文件 |
 | `python3 moodle.py sync 123 ~/统计学` | 下载一门课 |
 | `python3 moodle.py sync --all ~/Moodle` | 下载这些课，并生成 `DEADLINES.md` |
+| `python3 moodle.py assignments` | 列出作业的编号和截止日期 |
 
-在 `info`、`courses`、`deadlines`、`grades`、`contents` 后面加 `--json`，输出就能给其他程序读取。
+在 `info`、`courses`、`deadlines`、`grades`、`contents`、`assignments` 后面加 `--json`，输出就能给其他程序读取。
+
+## 上传作业（不建议使用）
+
+能用 Moodle 网页就用网页交，才看得到实际交了什么。真的需要时才用这个命令。
+
+```bash
+python3 moodle.py assignments                  # 查作业编号
+python3 moodle.py upload 456 ~/homework.pdf
+```
+
+- 要另外开一个终端窗口执行，不能在 Claude Code 里跑。它会拒绝在 Claude Code 里执行，有助于防止课程文件骗它代交。这是一道防护，不是绝对拦得住。
+- 它会显示作业和文件，你要输入 `UPLOAD` 才会继续。
+- 作业里已经有你的文件或文字时，它不会动；看起来像密码或密钥的文件也会被拒绝。
+- 有些作业上传后还要到网页按“提交”，命令会告诉你。没有提交按钮的作业，保存后通常就算交了。
+- 上传后请到网页确认。交出去的内容由你自己负责。
+
+### 让 Claude Code 代交（默认关闭）
+
+如果你想交给 Claude Code 处理，要自己另外开终端打开这个选项：
+
+```bash
+python3 moodle.py ai-upload on    # 输入 ALLOW AI UPLOAD 确认
+python3 moodle.py ai-upload off   # 关闭
+```
+
+- 打开后，Claude Code 可以执行 `upload 456 ~/homework.pdf --auto`，上传文件并按下提交。交出去通常就改不了。
+- 打开后，课程文件可能试图骗 Claude Code 代交。愿意承担这个风险才打开。
+- 作业要求你接受声明时，会停在草稿，由你自己按提交。那是你本人的承诺。
+- 重新登录后会自动关闭。这个开关要在真的终端打开，这是一道防护，不是绝对拦得住。
 
 ## 可以跟 Claude Code 这样说
 
@@ -114,7 +144,7 @@ python3 moodle.py login https://你的-moodle-网址
 
 ## 限制
 
-- 命令只会读取。不能交作业、发帖或作答，也不会读测验题目。
+- 只有 `upload` 会改动 Moodle 上的东西。它和 `--auto` 都只在假站点测过，还没用真实作业测试。没有命令能发帖或作答，也不会读测验题目。
 - `DEADLINES.md` 只列 Moodle 日历上的待办。只写在讲义或公告里的日期不会出现，一切以 Moodle 和老师公告为准。
 - 作业说明的附件、讨论帖的回复、其他网站上的文件都不会下载。存在 Moodle 里的视频会下载，文件可能很大。
 - 能否登录要看学校。从校务门户统一登录的学校比较适合；使用普通 Moodle 密码的学校可能会拒绝；关闭 Moodle mobile web service 的学校无法使用。

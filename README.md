@@ -72,7 +72,7 @@ If your Moodle has **Preferences > Security keys**, you can skip F12. Copy the k
 
 Your sign-in is saved in `~/.moodle-student-kit/credentials.json`. On Mac and Linux, other accounts can't read that file, but any program you run can.
 
-**What the saved key can do.** This tool's commands only read Moodle, but the key itself can do anything you can do there, including submitting work. Treat it like your password.
+**What the saved key can do.** Apart from `upload`, this tool's commands only read Moodle, but the key itself can do anything you can do there, including submitting work. Treat it like your password.
 
 ## Everyday commands
 
@@ -87,8 +87,38 @@ You can ask Claude Code to run these. To type them yourself, run `cd ~/moodle-st
 | `python3 moodle.py contents 123` | Lists the sections and files of course 123 |
 | `python3 moodle.py sync 123 ~/Statistics` | Downloads one course |
 | `python3 moodle.py sync --all ~/Moodle` | Downloads those courses and writes `DEADLINES.md` |
+| `python3 moodle.py assignments` | Lists assignments with their ids and due dates |
 
-Add `--json` to `info`, `courses`, `deadlines`, `grades` or `contents` for output that other programs can read.
+Add `--json` to `info`, `courses`, `deadlines`, `grades`, `contents` or `assignments` for output that other programs can read.
+
+## Uploading an assignment (not recommended)
+
+Hand work in on Moodle's website when you can, so you can see exactly what you're submitting. This command is there if you really want it.
+
+```bash
+python3 moodle.py assignments                  # find the assignment id
+python3 moodle.py upload 456 ~/homework.pdf
+```
+
+- Run it in a separate terminal, outside Claude Code. It refuses to run inside Claude Code, which helps stop a course file from tricking it into handing anything in. That's a safeguard, and a determined program could get past it.
+- It shows the assignment and the file, and you type `UPLOAD` to continue.
+- It won't touch a submission that already holds your files or text, and it refuses anything that looks like a password or key file.
+- Some assignments need you to press Submit on the website afterwards, and the command tells you when. Assignments without a Submit step normally count as handed in once saved.
+- Check the result on the website. What you hand in is your responsibility.
+
+### Let Claude Code hand work in (off by default)
+
+If you'd rather have Claude Code do this, turn it on yourself in a separate terminal:
+
+```bash
+python3 moodle.py ai-upload on    # type ALLOW AI UPLOAD to confirm
+python3 moodle.py ai-upload off   # turn it back off
+```
+
+- Claude Code can then run `upload 456 ~/homework.pdf --auto`, which uploads the file and presses Submit. Submitted work usually can't be changed.
+- With this on, a course file could try to trick Claude Code into handing something in. Turn it on only if you accept that risk.
+- If an assignment asks you to accept a statement, it stops at a draft and you press Submit yourself. That promise is yours to make.
+- Signing in again turns this off. The switch needs a real terminal, which is a safeguard and not a wall.
 
 ## Ideas to try with Claude Code
 
@@ -114,7 +144,7 @@ Open Claude Code inside your `~/Moodle` folder. Each sync leaves a set of rules 
 
 ## Limitations
 
-- The commands only read. They can't submit assignments, post, or take quizzes, and they don't read quizzes.
+- `upload` is the only command that changes anything on Moodle. It and `--auto` have only been tested on a fake site, not on a real assignment. No command posts, takes quizzes or reads quizzes.
 - `DEADLINES.md` lists Moodle's calendar to-dos. Dates that appear only in slides or announcements won't be there, so Moodle and your teacher have the final word.
 - Files attached to assignment instructions, replies in forum threads, and files on other sites aren't downloaded. Videos stored in Moodle are, and they can be large.
 - Sign-in depends on your school. It suits schools that sign in through a campus portal. Schools with ordinary Moodle passwords may refuse it, and schools that turn off the Moodle mobile web service can't use this tool.
