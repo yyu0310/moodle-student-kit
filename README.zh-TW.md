@@ -130,9 +130,8 @@ python3 moodle.py login https://你的-moodle-網址
 
 ## 使用須知
 
-- 課程檔案屬於老師和學校，請留在自己手上，不要公開。
-- Claude Code 執行這些指令時，會把你的成績、帳號和課程名稱傳給 Anthropic，打開的檔案也一樣。請先確認課程對 AI 的規定。
-- 學校可能不允許長期鑰匙或自動下載。遵守校規是你自己的責任。
+- Claude Code 執行這些指令時，會把你的成績、帳號和課程名稱傳給 Anthropic，打開的檔案也一樣
+- 遵守校規，請先確認課程對 AI 的規定。
 - 本專案與 Moodle 官方無關。Moodle 是 Moodle Pty Ltd 的註冊商標。
 
 ## 開發者

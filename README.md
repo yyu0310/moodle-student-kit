@@ -130,9 +130,8 @@ Open Claude Code inside your `~/Moodle` folder. Each sync leaves a set of rules 
 
 ## Use it responsibly
 
-- Course files belong to your teachers and school. Keep them private.
-- Claude Code sends Anthropic your grades, username and course names when it runs these commands, and any file it opens. Check your course's rules on AI first.
-- Your school may not allow long-lasting keys or automated downloads. Following its rules is up to you.
+- Claude Code sends Anthropic your grades, username and course names when it runs these commands, and any file it opens
+- Follow your school's rules, and check your course's rules on AI first.
 - This project isn't affiliated with Moodle. Moodle is a registered trademark of Moodle Pty Ltd.
 
 ## For developers
